@@ -8,6 +8,9 @@ with open("encodings.pickle", "rb") as f:
     known_encodings = data["encodings"]
     known_names = data["names"]
 
+# List of names to draw red square and name in red
+alert_names = ["Omkar Shirse"]  # Replace with names to trigger red bounding box and label
+
 # Open webcam (using working index 0)
 video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
@@ -33,22 +36,29 @@ while True:
     face_locations = face_recognition.face_locations(rgb_small_frame)
     face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
 
+    # Debugging: Print number of faces detected
+    #print(f"🔍 Detected {len(face_locations)} face(s) in frame")
+
     # Loop through each face detected
     for face_encoding, face_location in zip(face_encodings, face_locations):
         matches = face_recognition.compare_faces(known_encodings, face_encoding)
         name = "Unknown"
+        color = (0, 0, 255)  # Red for unknown
 
         if True in matches:
             first_match_index = matches.index(True)
             name = known_names[first_match_index]
+            color = (0, 255, 0)  # Green for known faces
+            if name in alert_names:
+                color = (0, 0, 255)  # Red for specific known faces (box and name)
 
         # Scale face location back to original size
         top, right, bottom, left = [v * 4 for v in face_location]
 
-        # Draw rectangle and name
-        cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+        # Draw rectangle and name with specified color
+        cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
         cv2.putText(frame, name, (left + 6, top - 6),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 0), 1)
+                    cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 1)
 
     # Show the frame
     cv2.imshow("Face Recognition", frame)
