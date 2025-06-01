@@ -1,0 +1,35 @@
+import face_recognition
+import os
+import pickle
+import cv2
+
+# Folder containing face images
+image_dir = "known_faces"
+image_dir = r"D:\Light\Documents\CODESPACE\Face Recognition\known_faces"
+# Lists to store encodings and names
+known_encodings = []
+known_names = []
+video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+
+
+# Loop through each image
+for filename in os.listdir(image_dir):
+    if filename.endswith(('.jpg', '.jpeg', '.png')):
+        name = os.path.splitext(filename)[0]
+        image_path = os.path.join(image_dir, filename)
+
+        # Load and encode face
+        image = face_recognition.load_image_file(image_path)
+        encodings = face_recognition.face_encodings(image)
+
+        if encodings:
+            known_encodings.append(encodings[0])  # Use the first detected face
+            known_names.append(name)
+        else:
+            print(f"[Warning] No face found in {filename}, skipping.")
+
+# Save encodings to a file
+with open("encodings.pickle", "wb") as f:
+    pickle.dump({"encodings": known_encodings, "names": known_names}, f)
+
+print("✅ Encodings saved to encodings.pickle")
