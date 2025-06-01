@@ -5,7 +5,7 @@ import cv2
 
 # Folder containing face images
 image_dir = "known_faces"
-image_dir = r"D:\Light\Documents\CODESPACE\Face Recognition\known_faces"
+image_dir = r"  "  #Location of known_faces Folder on PC
 # Lists to store encodings and names
 known_encodings = []
 known_names = []
