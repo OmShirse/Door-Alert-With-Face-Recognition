@@ -1,17 +1,26 @@
 import cv2
 import face_recognition
 import pickle
+import numpy as np
+from scipy.spatial import distance
 
 # Load known face encodings
-with open("encodings.pickle", "rb") as f:
-    data = pickle.load(f)
-    known_encodings = data["encodings"]
-    known_names = data["names"]
+try:
+    with open("encodings.pickle", "rb") as f:
+        data = pickle.load(f)
+        known_encodings = data["encodings"]
+        known_names = data["names"]
+except FileNotFoundError:
+    print("❌ Error: encodings.pickle not found.")
+    exit()
+except Exception as e:
+    print(f"❌ Error loading encodings: {e}")
+    exit()
 
 # List of names to draw red square and name in red
-alert_names = ["Omkar Shirse"]  # Replace with names to trigger red bounding box and label
+alert_names = ["Omkar Shirse", "Osama Bin Laden"]
 
-# Open webcam (using working index 0)
+# Open webcam (using index 0 with CAP_DSHOW for Windows)
 video_capture = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
 if not video_capture.isOpened():
@@ -20,53 +29,81 @@ if not video_capture.isOpened():
 
 print("✅ Webcam opened at index 0")
 
-while True:
-    ret, frame = video_capture.read()
+# Variables to persist name and bounding box
+last_name = None
+last_color = None
+face_detected_reported = False  # Flag to track if detection was printed
 
-    # Check if frame was captured properly
-    if not ret or frame is None:
-        print("❌ Failed to grab frame.")
-        break
+# Frame skipping counter
+frame_count = 0
+process_every_n_frames = 4  # Process recognition every 4th frame
 
-    # Resize frame to 1/4 size for faster processing
-    small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-    rgb_small_frame = small_frame[:, :, ::-1]  # Convert BGR to RGB
+try:
+    while True:
+        ret, frame = video_capture.read()
 
-    # Detect faces and face encodings in current frame
-    face_locations = face_recognition.face_locations(rgb_small_frame)
-    face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
+        if not ret or frame is None:
+            print("❌ Failed to grab frame.")
+            break
 
-    # Debugging: Print number of faces detected
-    #print(f"🔍 Detected {len(face_locations)} face(s) in frame")
+        # Resize frame to 1/4 size for faster processing
+        small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+        rgb_small_frame = small_frame[:, :, ::-1]  # Convert BGR to RGB
 
-    # Loop through each face detected
-    for face_encoding, face_location in zip(face_encodings, face_locations):
-        matches = face_recognition.compare_faces(known_encodings, face_encoding)
-        name = "Unknown"
-        color = (0, 0, 255)  # Red for unknown
+        # Detect faces every frame for accurate bounding box positioning
+        face_locations = face_recognition.face_locations(rgb_small_frame)
 
-        if True in matches:
-            first_match_index = matches.index(True)
-            name = known_names[first_match_index]
-            color = (0, 255, 0)  # Green for known faces
-            if name in alert_names:
-                color = (0, 0, 255)  # Red for specific known faces (box and name)
+        # Debugging: Print detection message only once
+        if face_locations and not face_detected_reported:
+            print(f"🔍 Detected {len(face_locations)} face(s) in frame")
+            face_detected_reported = True
+        elif not face_locations and face_detected_reported:
+            face_detected_reported = False
 
-        # Scale face location back to original size
-        top, right, bottom, left = [v * 4 for v in face_location]
+        # Process recognition every 4th frame
+        frame_count += 1
+        process_frame = frame_count % process_every_n_frames == 0
 
-        # Draw rectangle and name with specified color
-        cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
-        cv2.putText(frame, name, (left + 6, top - 6),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 1)
+        if process_frame and face_locations:
+            # Compute encoding only for the first face
+            first_face_location = face_locations[0]
+            face_encoding = face_recognition.face_encodings(rgb_small_frame, [first_face_location])[0]
+            name = "Unknown"
+            color = (0, 0, 255)  # Red for unknown
 
-    # Show the frame
-    cv2.imshow("Face Recognition", frame)
+            # Find closest match
+            face_distances = face_recognition.face_distance(known_encodings, face_encoding)
+            if len(face_distances) > 0:
+                best_match_index = face_distances.argmin()
+                distance = face_distances[best_match_index]
+                print(f"🔍 Closest match distance: {distance:.2f} for {known_names[best_match_index]}")
+                if distance < 0.7:
+                    name = known_names[best_match_index]
+                    color = (0, 255, 0)  # Green for known faces
+                    if name in alert_names:
+                        color = (0, 0, 255)  # Red for alert names
 
-    # Exit on pressing 'q'
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+            # Update persisted data
+            last_name = name
+            last_color = color
 
-# Release resources
-video_capture.release()
-cv2.destroyAllWindows()
+        # Draw rectangle and name using current face location
+        if face_locations and last_name:
+            top, right, bottom, left = [int(v * 4) for v in face_locations[0]]  # Scale to original size
+            cv2.rectangle(frame, (left, top), (right, bottom), last_color, 2)
+            cv2.putText(frame, last_name, (left + 6, top - 6),
+                        cv2.FONT_HERSHEY_DUPLEX, 0.6, last_color, 1)
+        elif not face_locations:
+            last_name = None
+            last_color = None
+
+        # Display the frame
+        cv2.imshow("Face Recognition", frame)
+
+        # Exit on 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+finally:
+    video_capture.release()
+    cv2.destroyAllWindows()
