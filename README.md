@@ -45,6 +45,8 @@ Faces are detected and compared against known encodings using the face_recogniti
 Recognized faces are labeled with names; unknowns are flagged for potential alerts.
 The system draws rectangles around faces and displays names in the video feed.
 
+
+![Face Recognition](https://github.com/OmShirse/Door-Alert-With-Face-Recognition/blob/6695e2621b1d86b6698642990885515959f423d6/Face%20Recognition.png)
 Notes
 
 Ensure the encodings.pickle file is in the same directory as the script.
