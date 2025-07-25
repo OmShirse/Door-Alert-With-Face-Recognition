@@ -1,0 +1,209 @@
+# Program: ESP32-CAM Live Face Recognition with PC Processing
+
+# --- 1. Import Necessary Libraries ---
+# For video processing, drawing, and display
+import cv2
+# For face detection, encoding, and recognition
+import face_recognition
+# For saving and loading pre-computed face encodings
+import pickle
+# For numerical operations, especially with image data
+import numpy as np
+# For making HTTP requests to get the video stream from ESP32-CAM
+import requests
+# For handling image data in memory as bytes
+from io import BytesIO
+
+# --- 2. Configuration Settings ---
+# >>> IMPORTANT: REPLACE THIS WITH YOUR ESP32-CAM'S ACTUAL IP ADDRESS <<<
+# You found this IP address in the Arduino IDE's Serial Monitor after uploading the sketch to your ESP32-CAM.
+ESP32_CAM_IP = "YOUR_ESP32_CAM_IP_ADDRESS_HERE"  # Example: "192.168.1.105"
+ESP32_CAM_STREAM_URL = f"http://{ESP32_CAM_IP}/cam.mjpeg"
+
+# List of names that, if recognized, will be highlighted with a red box/text.
+# Add names exactly as they are in your 'known_faces' folder and 'encodings.pickle' file.
+alert_names = ["Omkar Shirse", "Osama Bin Laden"]
+
+# --- 3. Load Known Face Encodings ---
+# This block attempts to load the 'encodings.pickle' file.
+# This file contains the "face fingerprints" of known individuals, pre-computed by your encoding script.
+try:
+    with open("encodings.pickle", "rb") as f:
+        data = pickle.load(f)
+        known_encodings = data["encodings"]
+        known_names = data["names"]
+    print("✅ Known face encodings loaded successfully from encodings.pickle.")
+except FileNotFoundError:
+    print("❌ Error: encodings.pickle not found. Please ensure your 'known_faces' folder exists and run the separate face encoding script first to create this file.")
+    exit() # Exit if encodings are missing, as recognition cannot proceed.
+except Exception as e:
+    print(f"❌ Error loading encodings: {e}. Please check the file's integrity.")
+    exit() # Exit on other loading errors.
+
+# --- 4. MJPEG Stream Reader Function ---
+# This function is designed to connect to the ESP32-CAM's MJPEG video stream and extract one JPEG image frame at a time.
+# It handles the specific way MJPEG streams are formatted (multipart data).
+def get_mjpeg_frame(stream_url):
+    try:
+        # Attempt to connect to the video stream. 'stream=True' means it keeps the connection open.
+        # 'timeout=5' prevents the program from hanging indefinitely if the camera is unreachable.
+        response = requests.get(stream_url, stream=True, timeout=5)
+        
+        # Check if the connection was successful (HTTP status code 200 means OK).
+        if response.status_code == 200:
+            bytes_data = b'' # Buffer to accumulate incoming bytes
+            
+            # Iterate through incoming data chunks from the stream.
+            # MJPEG frames are delimited by specific JPEG start (FF D8) and end (FF D9) markers.
+            for chunk in response.iter_content(chunk_size=8192): # Read data in 8KB chunks
+                bytes_data += chunk # Add current chunk to our buffer
+                
+                # Search for the JPEG start and end markers in the buffer.
+                a = bytes_data.find(b'\xff\xd8') # Start of JPEG image
+                b = bytes_data.find(b'\xff\xd9') # End of JPEG image
+                
+                if a != -1 and b != -1: # If both markers are found, we have a complete JPEG frame
+                    jpg_data = bytes_data[a:b+2] # Extract the full JPEG image bytes
+                    bytes_data = bytes_data[b+2:] # Keep any remaining bytes for the next frame
+                    
+                    try:
+                        # Decode the JPEG bytes into an OpenCV image format (a NumPy array).
+                        nparr = np.frombuffer(jpg_data, np.uint8)
+                        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                        
+                        if frame is not None:
+                            return frame # Return the decoded image frame
+                    except cv2.error as e:
+                        # Handle potential errors during JPEG decoding (e.g., corrupted frame data).
+                        print(f"❌ OpenCV decode error: {e}. Skipping potentially corrupted frame.")
+                        continue # Skip this frame and try to get the next one.
+        else:
+            print(f"❌ Failed to get stream from {stream_url}. HTTP Status code: {response.status_code}. Is the ESP32-CAM's web server running?")
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ Connection error: {e}. Please ensure your ESP32-CAM is powered on, connected to the same Wi-Fi network as this PC, and its IP address is correct.")
+    except requests.exceptions.Timeout:
+        print("❌ Connection timed out. The ESP32-CAM might be slow to respond or network is congested. Check its status.")
+    except Exception as e:
+        print(f"❌ An unexpected error occurred while trying to get the stream: {e}")
+    return None # Return None if no valid frame could be retrieved
+
+# --- 5. Main Recognition Loop ---
+
+print(f"✅ Attempting to connect to ESP32-CAM stream at {ESP32_CAM_STREAM_URL}")
+print("Press 'q' to quit the program.")
+
+# Variables to hold the last recognized name and color.
+# This helps reduce flickering on the display if recognition isn't performed every single frame.
+last_name = None
+last_color = None
+# Flag to control printing "face detected" messages only when status changes.
+face_detected_reported = False
+
+# Counters for frame skipping to optimize performance.
+frame_count = 0
+process_every_n_frames = 4  # Recognition (encoding & matching) will run every 4th frame.
+                            # Face detection (bounding box) still runs on every frame.
+
+try:
+    while True:
+        # Get the latest frame from the ESP32-CAM stream.
+        frame = get_mjpeg_frame(ESP32_CAM_STREAM_URL)
+
+        # If no frame could be retrieved, pause briefly to avoid a tight loop
+        # and give the ESP32-CAM time to recover or reconnect.
+        if frame is None:
+            cv2.waitKey(100) # Wait for 100 milliseconds
+            continue # Skip to the next loop iteration
+
+        # Resize the frame to 1/4 size for faster face detection.
+        # Face detection is computationally lighter than recognition and runs on every frame.
+        small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+        # Convert the image from BGR (OpenCV's default) to RGB (face_recognition's requirement).
+        rgb_small_frame = small_frame[:, :, ::-1]
+
+        # --- Face Detection (Fast - Runs on every frame) ---
+        # Locates all faces in the current frame.
+        face_locations = face_recognition.face_locations(rgb_small_frame)
+
+        # Print debug messages about face detection status, but only when it changes.
+        if face_locations and not face_detected_reported:
+            print(f"🔍 Detected {len(face_locations)} face(s) in frame.")
+            face_detected_reported = True
+        elif not face_locations and face_detected_reported:
+            print("🔍 No faces detected.")
+            face_detected_reported = False
+
+        # --- Face Recognition (Slower - Runs less frequently) ---
+        frame_count += 1
+        process_recognition_this_frame = (frame_count % process_every_n_frames == 0)
+
+        # Only proceed with recognition if it's a designated frame AND faces are detected.
+        if process_recognition_this_frame and face_locations:
+            # For simplicity and performance, we'll only process the first detected face for recognition.
+            first_face_location = face_locations[0]
+            # Compute the 128-dimensional face encoding (fingerprint) for this face.
+            face_encoding = face_recognition.face_encodings(rgb_small_frame, [first_face_location])[0]
+            
+            # Default values if face is not recognized as known.
+            name = "Unknown"
+            color = (0, 0, 255)  # Red color for unknown faces
+
+            # Attempt to find the closest match among our pre-loaded known faces.
+            if len(known_encodings) > 0: # Ensure we have known faces to compare against
+                # Calculate the Euclidean distance between the detected face and all known faces.
+                # Lower distance means a better match.
+                face_distances = face_recognition.face_distance(known_encodings, face_encoding)
+                
+                # Find the index of the known face with the smallest distance.
+                best_match_index = face_distances.argmin()
+                distance = face_distances[best_match_index]
+                
+                print(f"🔍 Closest match found: '{known_names[best_match_index]}' with distance: {distance:.2f}")
+                
+                # Apply a recognition threshold: if the distance is below this, consider it a match.
+                # A common threshold is 0.6. Adjust this value (e.g., 0.65, 0.7) based on your needs
+                # (lower for stricter recognition, higher for more lenient).
+                if distance < 0.6: 
+                    name = known_names[best_match_index] # Assign the recognized name
+                    color = (0, 255, 0)  # Green color for known faces
+
+                    # Override color to red if the recognized name is on the alert list.
+                    if name in alert_names:
+                        color = (0, 0, 255)  # Red for alert names
+
+            # Store the current recognition result (name and color) to use for drawing.
+            # This helps to keep the drawn text/box stable even when recognition skips frames.
+            last_name = name
+            last_color = color
+
+        # --- 6. Draw Annotations on the Frame ---
+        # Draw the bounding box and name using the *most recently detected* face location
+        # and the *most recently recognized* (or 'Unknown') name and color.
+        if face_locations and last_name is not None:
+            # Scale the bounding box coordinates back up to the original frame size for accurate drawing.
+            top, right, bottom, left = [int(v * 4) for v in face_locations[0]]
+            
+            # Draw the rectangle around the face.
+            cv2.rectangle(frame, (left, top), (right, bottom), last_color, 2)
+            # Put the recognized name (or "Unknown") as text above the box.
+            cv2.putText(frame, last_name, (left + 6, top - 6),
+                        cv2.FONT_HERSHEY_DUPLEX, 0.6, last_color, 1)
+        elif not face_locations:
+            # If no faces are detected in the current frame, clear the persisted name/color.
+            # This makes sure old names don't linger on screen when no one is there.
+            last_name = None
+            last_color = None
+
+        # --- 7. Display the Frame ---
+        cv2.imshow("ESP32-CAM Face Recognition", frame)
+
+        # --- 8. Handle User Input for Exiting ---
+        # Waits for 1 millisecond for a key press. If 'q' is pressed, break the loop.
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+# --- 9. Cleanup After Loop Exits ---
+finally:
+    # Close all OpenCV display windows.
+    cv2.destroyAllWindows()
+    print("Program exited successfully. Goodbye!")
