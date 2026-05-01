@@ -1,0 +1,15 @@
+# Generated at runtime — not source
+encodings.pickle
+access_log.csv
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
