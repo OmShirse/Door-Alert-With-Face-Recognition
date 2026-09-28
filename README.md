@@ -1,63 +1,126 @@
-Smart Door Alert with Face Recognition
-Overview
-This project is a smart door alert system with face recognition, designed to enhance home security. A camera embedded in the door scans faces, checks them against a database of known individuals, and decides whether to unlock the door for familiar faces or trigger an alert for unknowns. Built with Python and compatible with microcontrollers like Arduino or ESP, it’s a user-friendly solution for secure access control.
-Features
+# 🚪 Door Alert With Face Recognition
 
-Face Detection: Uses a webcam to detect faces in real-time.
-Face Recognition: Compares detected faces against a pre-loaded database of known face encodings.
-Visual Feedback: Displays a live video feed with labeled rectangles around detected faces, marking them as "Known" or "Unknown."
-Hardware Compatibility: Designed to integrate with microcontrollers like Arduino or ESP for lock control.
+> **Smart door security system** — camera scans faces, unlocks for known individuals, alerts for unknowns.  
+> Built with Python · OpenCV · face_recognition · Arduino/ESP compatible
 
-Requirements
+[![GitHub](https://img.shields.io/badge/GitHub-OmShirse-blue?logo=github)](https://github.com/OmShirse/Door-Alert-With-Face-Recognition)
 
-Python 3.x
-Libraries:
-opencv-python (cv2) for video capture and display
-face_recognition for face detection and recognition
-pickle for loading pre-saved face encodings
+---
 
+## 📌 Overview
 
-A webcam (USB or built-in)
-Pre-trained face encodings saved in encodings.pickle (format: {"encodings": [], "names": []})
+A smart door alert system that uses a camera to perform **real-time face recognition**. Known faces (family, authorized users) trigger an unlock signal; unknown faces trigger an alert — all with live visual feedback.
 
-Installation
+**Hardware:** Pairs with an Arduino/ESP microcontroller for physical lock/buzzer control.
 
-Install dependencies:pip install opencv-python face_recognition
+---
 
+## 🎯 Features
 
-Ensure a webcam is connected and accessible.
-Prepare a encodings.pickle file with known face encodings and names.
+| Feature | Details |
+|---|---|
+| 🎥 Real-time face detection | Webcam-based, runs at ~30 fps |
+| 🧠 Face recognition | Compares against `encodings.pickle` database |
+| 🏷️ Visual labeling | Live feed with "Known" / "Unknown" bounding boxes |
+| 🔒 Access control | Sends serial signal to Arduino/ESP for lock/unlock |
+| 🔔 Alert system | Buzzer/LED trigger for unrecognized faces |
+| 📂 Extensible DB | Add new faces via `encode_faces.py` script |
 
-Usage
+---
 
-Run the script:python face_recognition_door.py
+## 🛠️ Hardware Requirements
 
+- Webcam (USB or built-in)
+- Arduino / ESP8266 / ESP32 (for lock relay + buzzer)
+- Relay module (for door lock actuator)
+- Optional: Piezo buzzer, RGB LED
 
-The webcam will start, displaying a live feed with detected faces.
-Faces are labeled as "Known" (with a name) or "Unknown" based on the database.
-Press q to exit the program.
+---
 
-How It Works
+## 💻 Software Requirements
 
-The script loads pre-saved face encodings and names from encodings.pickle.
-It captures video from the webcam and resizes frames for faster processing.
-Faces are detected and compared against known encodings using the face_recognition library.
-Recognized faces are labeled with names; unknowns are flagged for potential alerts.
-The system draws rectangles around faces and displays names in the video feed.
+```
+Python 3.8+
+opencv-python
+face_recognition
+dlib
+imutils
+pyserial       # for Arduino communication
+pickle
+```
 
+Install with:
+```bash
+pip install opencv-python face_recognition imutils pyserial
+```
 
-![Face Recognition](https://github.com/OmShirse/Door-Alert-With-Face-Recognition/blob/6695e2621b1d86b6698642990885515959f423d6/Face%20Recognition.png)
-Notes
+> **Note:** `face_recognition` requires `dlib`. On Linux:  
+> `sudo apt install cmake libopenblas-dev liblapack-dev`
 
-Ensure the encodings.pickle file is in the same directory as the script.
-The webcam index (0) may need adjustment based on your system.
-For integration with a door lock, additional hardware (e.g., Arduino, ESP) and code modifications are required to send lock/unlock signals based on recognition results.
+---
 
-Future Improvements
+## 🚀 Quick Start
 
-Add real-time alerts (e.g., email or SMS) for unknown faces.
-Integrate with a physical lock system using GPIO pins on a microcontroller.
-Enhance the database to support dynamic updates of known faces.
+### 1. Encode known faces
+```bash
+python encode_faces.py --dataset dataset/ --encodings encodings.pickle
+```
+Place face images in `dataset/<person_name>/photo.jpg` format.
 
-License
-This project is licensed under the MIT License.
+### 2. Run the door alert system
+```bash
+python door_alert.py --encodings encodings.pickle --output output/
+```
+
+### 3. Optional: Connect to Arduino
+Upload `arduino/door_lock.ino` to your board and set the serial port in `config.py`.
+
+---
+
+## 📁 Project Structure
+
+```
+Door-Alert-With-Face-Recognition/
+├── door_alert.py          # Main face recognition loop
+├── encode_faces.py        # Script to encode new faces
+├── config.py              # Serial port, thresholds, camera index
+├── encodings.pickle       # Pre-trained face encodings (generated)
+├── arduino/
+│   └── door_lock.ino      # Arduino sketch (relay + buzzer control)
+├── dataset/               # Training face images (per-person folders)
+└── README.md
+```
+
+---
+
+## ⚙️ Configuration (`config.py`)
+
+```python
+SERIAL_PORT   = "/dev/ttyUSB0"   # Arduino serial port
+BAUD_RATE     = 9600
+TOLERANCE     = 0.5              # Lower = stricter matching
+CAMERA_INDEX  = 0                # 0 = built-in, 1 = USB cam
+```
+
+---
+
+## 🔭 Further Scope / Improvements
+
+- [ ] **MQTT integration** — publish alerts to a home-automation broker (Home Assistant)
+- [ ] **Telegram / SMS alerts** — send photo of unknown visitor to phone
+- [ ] **Face registration UI** — simple Tkinter/Flask web UI to add new faces
+- [ ] **Multiple camera support** — front door + back door
+- [ ] **Attendance logging** — log recognized faces with timestamps to CSV/SQLite
+- [ ] **Anti-spoofing** — detect printed photos vs live faces (liveness detection)
+- [ ] **GPU acceleration** — use CUDA/OpenCV DNN for faster detection
+- [ ] **Edge deployment** — run on Raspberry Pi with PiCamera module
+
+---
+
+## 🤝 Contributing
+
+Pull requests welcome. See [GitHub repo](https://github.com/OmShirse/Door-Alert-With-Face-Recognition) for issues.
+
+---
+
+*Part of the [OmShirse/chess](https://github.com/OmShirse/chess) monorepo*
